@@ -1,0 +1,17 @@
+{
+  "name": "execution-plan-tutorial",
+  "version": "1.0.0",
+  "description": "PostgreSQL実行計画の技術解説",
+  "type": "module",
+  "scripts": {
+    "sql": "tsx scripts/sqlFileRunner.ts",
+    "sql:en": "tsx scripts/sqlFileRunner.ts --en",
+    "db:up": "docker compose -f ../DB-PostgreSQL/docker/docker-compose.yaml -p pg17dev up -d --wait",
+    "db:down": "docker compose -f ../DB-PostgreSQL/docker/docker-compose.yaml -p pg17dev down"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.1",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2"
+  }
+}

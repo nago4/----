@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>技術解説：PostgreSQL 17 実行計画(EXPLAIN) 深掘りガイド</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>🔍 DBを「透視」する：実行計画(EXPLAIN) 徹底攻略</h1>
+        <nav>
+            <ul>
+                <li><a href="#intro">1. はじめに</a></li>
+                <li><a href="#setup">2. 実験環境構築</a></li>
+                <li><a href="#explain-basics">3. EXPLAINの読み方</a></li>
+                <li><a href="#index-scan">4. インデックスの真価</a></li>
+                <li><a href="#stats">5. 統計情報の力</a></li>
+                <li><a href="#join-algo">6. 結合アルゴリズム</a></li>
+                <li><a href="#drill">7. 最終演習</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <main>
+        <section id="intro">
+            <h2>1. はじめに</h2>
+            
+            <h3>1.1 なぜ実行計画を学ぶのか？</h3>
+            <p>
+                SQLは「何を取得するか」を記述する宣言型の言語であり、「どうやって取得するか」の手順はデータベース(DB)にお任せします。
+                この「どうやって」を決めるのが<strong>オプティマイザ</strong>であり、その決定事項が<strong>実行計画</strong>です。
+            </p>
+            <p>
+                大規模なシステムでは、実行計画ひとつでクエリの速度が<strong>1000倍以上</strong>変わることも珍しくありません。
+                本記事では、PostgreSQL 17のコンテナ環境を使い、10万件のデータに対してインデックスを貼ったり、結合クエリを投げたりしながら、
+                プロのエンジニアに必要な「推測と検証」のスキルを身につけます。
+            </p>
+
+            <h3>1.2 この記事で学べること</h3>
+            <ul>
+                <li><code>EXPLAIN</code> と <code>EXPLAIN ANALYZE</code> の違いと使い分け</li>
+                <li>Seq Scan、Index Scan、Bitmap Index Scan の違いと発生条件</li>
+                <li>オプティマイザが実行計画を選ぶ際の判断基準（コスト理論）</li>
+                <li>Nested Loop、Hash Join、Merge Join の3つの結合アルゴリズム</li>
+                <li>統計情報（ANALYZE）がオプティマイザに与える影響</li>
+                <li>実際のパフォーマンスチューニング方法論</li>
+            </ul>
+
+            <div class="important-box">
+                <h4>⚠️ 前提知識</h4>
+                <p>
+                    本記事は、第01〜12回講義で学んだ以下の内容を理解していることを前提とします：
+                </p>
+                <ul>
+                    <li>基本的なSELECT文（WHERE、JOIN、GROUP BY、ORDER BY）</li>
+                    <li>PRIMARY KEY、FOREIGN KEYの概念</li>
+                    <li>INDEXの基礎（CREATE INDEX文の構文）</li>
+                    <li>PostgreSQLのDockerコンテナの起動方法</li>
+                </ul>
+            </div>
+        </section>
+
+        <section id="setup">
+            <h2>2. 10万件の実験環境構築</h2>
+            <p>
+                まずは実験の土台となるデータを準備しましょう。
+                今回は「ゲームプレイヤー」と「ギルド」の2テーブル構成で、10万件のプレイヤーデータを生成します。
+            </p>
+
+            <h3>2.0 環境のセットアップ</h3>
+            <p>
+                この実験環境では、SQLファイルを簡単に実行できるように、Node.jsのスクリプトを使用します。
+                以下の手順で必要なファイルと依存関係をセットアップしてください。
+            </p>
+
+            <div class="step-box">
+                    以下の<strong>必須ファイルをコピー</strong>してください：
+                </p>
+                <ul>
+                    <li><code>package.json</code> - NPMパッケージ設定ファイル</li>
+                    <li><code>tsconfig.json</code> - TypeScript設定ファイル</li>
+                    <li><code>scripts/</code> フォルダ - SQLランナースクリプト</li>
+                    <li><code>sql/</code> フォルダ - 実験用SQLファイル</li>
+                </ul>
+                <p class="note">
+                    💡 <code>npm install</code> で 
+                    <code>ENOENT: no such file or directory, open '...実行計画1\package.json'</code> 
+                    というエラーが出た場合、上記のファイルをコピーしてから再度実行してください。
+                </p>
+            </div>
+
+            <div class="step-box">
+                <h4>📦 初回セットアップ手順</h4>
+                <ol>
+                    <li><strong>PostgreSQL 17のDockerコンテナを起動</strong>
+                        <pre>cd ../DB-PostgreSQL
+npm run db:up</pre>
+                    </li>
+                    <li><strong>実行計画フォルダに移動</strong>
+                        <pre>cd ../実行計画</pre>
+                    </li>
+                    <li><strong>依存関係をインストール</strong>（初回のみ必要）
+                        <pre>npm install</pre>
+                        <p class="note">これにより、TypeScriptランタイム（tsx）などがインストールされます。</p>
+                    </li>
+                    <li><strong>動作確認：セットアップSQLを実行</strong>
+                        <pre>npm run sql sql/exp_setup.sql</pre>
+
+                    </li>
+                </ol>
+            </div>
+
+            <div class="important-box">
+                <h4>💡 使用する主要コマンド</h4>
+                <ul>
+                    <li><code>npm run sql &lt;ファイルパス&gt;</code> - 指定したSQLファイルを実行</li>
+                    <li><code>npm run sql:en &lt;ファイルパス&gt;</code> - エラーメッセージを英語で表示</li>
+                    <li><code>npm run db:up</code> - PostgreSQLコンテナを起動</li>
+                    <li><code>npm run db:down</code> - PostgreSQLコンテナを停止</li>
+                </ul>
+                <p class="warning">
+                    ⚠️ <strong>重要：</strong> <code>npm run sql</code> コマンドは、PostgreSQL 17のDockerコンテナ（コンテナ名: <code>pg17</code>）に接続して
+                    SQLを実行します。実行前にコンテナが起動していることを必ず確認してください。
+                </p>
+            </div>
+
+            <h3>2.1 テーブル定義とデータ生成</h3>
+            <div class="code-block">
+                <p class="filename">📁 sql/exp_setup.sql</p>
+                <pre>-- クリーンアップ
+DROP TABLE IF EXISTS players CASCADE;
+DROP TABLE IF EXISTS guilds CASCADE;
+
+-- ギルドテーブル（親テーブル）
+CREATE TABLE guilds (
+    id INT PRIMARY KEY,
+    guild_name TEXT NOT NULL,
+    region TEXT NOT NULL,
+    founded_at TIMESTAMP NOT NULL
+);
+
+-- プレイヤーテーブル（子テーブル）
+CREATE TABLE players (
+    id INT PRIMARY KEY,
+    name TEXT NOT NULL,
+    level INT NOT NULL,
+    guild_id INT REFERENCES guilds(id),
+    login_count INT DEFAULT 0,
+    last_login TIMESTAMP,
+    created_at TIMESTAMP NOT NULL
+);
+
+-- ギルドデータ(50件)
+INSERT INTO guilds 
+SELECT 
+    i, 
+    'Guild_' || i, 
+    (ARRAY['Tokyo', 'Osaka', 'Nagoya', 'Fukuoka', 'Sapporo'])[floor(random()*5)+1],
+    '2023-01-01'::timestamp + (random() * interval '365 days')
+FROM generate_series(1, 50) i;
+
+-- プレイヤーデータ(10万件)
+-- 現実的なレベル分布：初心者30%、中級者40%、上級者30%
+INSERT INTO players
+SELECT 
+    i, 
+    'Player_' || i, 
+    CASE 
+        WHEN random() < 0.3 THEN floor(random() * 30 + 1)
+        WHEN random() < 0.7 THEN floor(random() * 40 + 31)
+        ELSE floor(random() * 30 + 71)
+    END,
+    CASE WHEN random() < 0.9 THEN floor(random() * 50 + 1) ELSE NULL END,
+    floor(random() * 500),
+    CASE WHEN random() < 0.8 THEN '2024-01-01'::timestamp + (random() * interval '365 days') ELSE NULL END,
+    '2023-01-01'::timestamp + (random() * interval '730 days')
+FROM generate_series(1, 100000) i;
+
+-- 統計情報を最新化（必須）
+ANALYZE guilds;
+ANALYZE players;
+
+-- データ確認
+SELECT COUNT(*) as guild_count FROM guilds;
+SELECT COUNT(*) as player_count FROM players;</pre>
+            </div>
+
+            <div class="step-box">
+                <h4>🚀 実行手順</h4>
+                <ol>
+                    <li>PostgreSQL 17のDockerコンテナが起動していることを確認</li>
+                    <li>上記のSQLを <code>sql/exp_setup.sql</code> として保存</li>
+                    <li>ターミナルで実行：<code>npm run sql sql/exp_setup.sql</code></li>
+                </ol>
+            </div>
+
+            <h3>2.2 データ分布の確認</h3>
+            <div class="code-block">
+                <pre>-- レベル分布の確認
+SELECT 
+    CASE 
+        WHEN level BETWEEN 1 AND 30 THEN '初心者(1-30)'
+        WHEN level BETWEEN 31 AND 70 THEN '中級者(31-70)'
+        ELSE '上級者(71-100)'
+    END as category,
+    COUNT(*) as count,
+    ROUND(COUNT(*)*100.0/(SELECT COUNT(*) FROM players), 1) || '%' as ratio
+FROM players
+GROUP BY category
+ORDER BY MIN(level);</pre>
+            </div>
+        </section>
+
+        <section id="explain-basics">
+            <h2>3. EXPLAINの読み方とコスト理論</h2>
+            
+            <h3>3.1 EXPLAIN と EXPLAIN ANALYZE の違い</h3>
+            <p>PostgreSQLには2つの実行計画確認方法があります。</p>
+            
+            <table class="comparison-table">
+                <thead>
+                    <tr>
+                        <th>コマンド</th>
+                        <th>役割</th>
+                        <th>実行時間</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>EXPLAIN</strong></td>
+                        <td>オプティマイザの「予測」を表示</td>
+                        <td>高速（クエリを実行しない）</td>
+                    </tr>
+                    <tr>
+                        <td><strong>EXPLAIN ANALYZE</strong></td>
+                        <td>実際に実行して「実測値」を表示</td>
+                        <td>低速（実際にクエリを実行）</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3>3.2 Seq Scan（全件走査）の実行計画を見る</h3>
+            <div class="code-block">
+                <pre>-- インデックスがない状態での実行計画（予測）
+EXPLAIN SELECT * FROM players WHERE level = 50;
+
+-- 実際に実行して実測値を確認
+EXPLAIN ANALYZE SELECT * FROM players WHERE level = 50;</pre>
+            </div>
+
+            <div class="result">
+                <h4>📊 出力例（EXPLAIN）：</h4>
+                <pre>Seq Scan on players  (cost=0.00..2041.00 rows=1000 width=45)
+  Filter: (level = 50)</pre>
+                
+                <h4>📊 出力例（EXPLAIN ANALYZE）：</h4>
+                <pre>Seq Scan on players  (cost=0.00..2041.00 rows=1000 width=45) (actual time=0.023..14.567 rows=990 loops=1)
+  Filter: (level = 50)
+  Rows Removed by Filter: 99010
+Planning Time: 0.112 ms
+Execution Time: 14.612 ms</pre>
+            </div>
+
+            <h3>3.3 実行計画の各要素を理解する</h3>
+            <ul>
+                <li><strong>Seq Scan：</strong> Sequential Scan（順次走査）。テーブルを先頭から順番に読み込み</li>
+                <li><strong>cost=0.00..2041.00：</strong> 開始コスト..終了コスト（単位は相対的な「コスト値」）</li>
+                <li><strong>rows=1000：</strong> 予測される返却行数</li>
+                <li><strong>width=45：</strong> 1行当たりの平均バイト数</li>
+                <li><strong>actual time=0.023..14.567：</strong> 実測の開始時間..終了時間（ミリ秒）</li>
+                <li><strong>actual rows=990：</strong> 実際に返された行数</li>
+                <li><strong>Rows Removed by Filter：</strong> WHERE句で除外された行数</li>
+                <li><strong>Execution Time：</strong> 全体の実行時間</li>
+            </ul>
+
+            <h3>3.4 コスト計算の仕組み</h3>
+            <p>PostgreSQLのコストは以下のパラメータから算出されます。</p>
+            <div class="formula-box">
+                <pre>Seq Scanのコスト = (ページ数 × seq_page_cost) + (行数 × cpu_tuple_cost) + (行数 × cpu_operator_cost)</pre>
+                <p>デフォルト値：</p>
+                <ul>
+                    <li><code>seq_page_cost = 1.0</code> (順次ディスク読み込みコスト)</li>
+                    <li><code>random_page_cost = 4.0</code> (ランダムディスク読み込みコスト)</li>
+                    <li><code>cpu_tuple_cost = 0.01</code> (1行処理のCPUコスト)</li>
+                    <li><code>cpu_operator_cost = 0.0025</code> (演算1回のコスト)</li>
+                </ul>
+            </div>
+
+            <div class="experiment-box">
+                <h4>🧪 実験1：予測と実測のズレを観察</h4>
+                <p>以下のクエリを実行し、予測値（rows）と実測値（actual rows）を比較してください。</p>
+                <div class="code-block">
+                    <pre>EXPLAIN ANALYZE SELECT * FROM players WHERE level = 100;
+EXPLAIN ANALYZE SELECT * FROM players WHERE level >= 1 AND level <= 10;
+EXPLAIN ANALYZE SELECT * FROM players WHERE guild_id = 5;</pre>
+                </div>
+                <p><strong>考察：</strong> 予測値と実測値にズレがある場合、その理由は何でしょうか？</p>
+            </div>
+        </section>
+
+        <section id="index-scan">
+            <h2>4. インデックスの真価と「使われない」ケース</h2>
+            
+            <h3>4.1 インデックス作成と効果測定</h3>
+            <div class="code-block">
+                <pre>-- 【Before】 インデックスなし
+EXPLAIN ANALYZE SELECT * FROM players WHERE level = 50;
+
+-- インデックスを作成
+CREATE INDEX idx_players_level ON players(level);
+
+-- 【After】 インデックスあり
+EXPLAIN ANALYZE SELECT * FROM players WHERE level = 50;</pre>
+            </div>
+
+            <div class="result">
+                <h4>📊 実行結果（インデックス作成前）：</h4>
+                <pre>Execution Time: 14.612 ms</pre>
+                <h4>📊 実行結果（インデックス作成後）：</h4>
+                <pre>Execution Time: 0.832 ms</pre>
+                <p><strong>高速化：約17.6倍！</strong></p>
+            </div>
+
+            <h3>4.2 3つのスキャン方式を理解する</h3>
+            <table class="comparison-table">
+                <thead>
+                    <tr>
+                        <th>スキャン方式</th>
+                        <th>対象行数</th>
+                        <th>特徴</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Seq Scan</strong></td>
+                        <td>全体の5%以上</td>
+                        <td>テーブル全体を順次読み込み</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Index Scan</strong></td>
+                        <td>1〜数十行</td>
+                        <td>インデックスから直接取得（1件ずつ）</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Bitmap Index Scan</strong></td>
+                        <td>数百〜数千行</td>
+                        <td>インデックスから効率的にページをまとめて取得</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <div class="experiment-box">
+                <h4>🧪 実験2：インデックス使用の境界線</h4>
+                <p>以下の3クエリで、どのスキャン方式が選ばれるか観察してください。</p>
+                <div class="code-block">
+                    <pre>-- A: 絞り込みが強い（対象が少ない）
+EXPLAIN ANALYZE SELECT * FROM players WHERE level = 100;
+
+-- B: 絞り込みが中程度
+EXPLAIN ANALYZE SELECT * FROM players WHERE level BETWEEN 30 AND 70;
+
+-- C: 絞り込みが弱い（対象が多い）
+EXPLAIN ANALYZE SELECT * FROM players WHERE level >= 1;</pre>
+                </div>
+                <p><strong>予想：</strong> CはSeq Scanに変わるはずです。なぜでしょうか？</p>
+            </div>
+
+            <div class="important-box">
+                <h4>💡 重要な原則：コストベースの判断</h4>
+                <p>
+                    全体の約5%以上を取得する場合、PostgreSQLはSeq Scanを選びます。
+                    これは<code>random_page_cost (4.0) > seq_page_cost (1.0)</code>だからです。
+                </p>
+                <p>
+                    インデックス経由でデータを取得する流れ：<br>
+                    1. インデックスを探索<br>
+                    2. 該当アドレスを取得<br>
+                    3. テーブル本体からランダムアクセス（重い）<br>
+                </p>
+                <p>
+                    対象行が多いと、ステップ3の負荷が膨大になり、全部読んだほうが速くなります。
+                </p>
+            </div>
+
+            <h3>4.3 インデックスが使えないSQLパターン</h3>
+            <div class="code-block">
+                <pre>-- ❌ 悪い例1：インデックス列に関数を適用
+EXPLAIN SELECT * FROM players WHERE LOWER(name) = 'player_100';
+
+-- ❌ 悪い例2：インデックス列に演算
+EXPLAIN SELECT * FROM players WHERE level * 2 > 100;
+
+-- ❌ 悪い例3：型変換
+EXPLAIN SELECT * FROM players WHERE name = 100;
+
+-- ✅ 良い例1：関数を右辺に
+EXPLAIN SELECT * FROM players WHERE name = LOWER('PLAYER_100');
+
+-- ✅ 良い例2：演算を右辺に
+EXPLAIN SELECT * FROM players WHERE level > 100 / 2;</pre>
+            </div>
+
+            <div class="confirmation-box">
+                <h4>📝 定着確認1：実行計画の判断</h4>
+                <ol>
+                    <li>インデックスがあれば、常にSeq Scanより高速である（⭕/❌）</li>
+                    <li>Bitmap Index Scanは、取得行数が少ない場合に使われる（⭕/❌）</li>
+                    <li>WHERE句でインデックス列に関数を適用すると、インデックスが使われない（⭕/❌）</li>
+                </ol>
+                <details>
+                    <summary>解答を表示</summary>
+                    <p>1. ❌（取得行数が多い場合はSeq Scanのほうが速い）</p>
+                    <p>2. ❌（逆です。Bitmap Index Scanは対象行数が多い場合に使われます）</p>
+                    <p>3. ⭕（関数インデックスを使えば解決可能）</p>
+                </details>
+            </div>
+        </section>
+
+        <section id="stats">
+            <h2>5. 統計情報とオプティマイザの「賢さ」</h2>
+            
+            <h3>5.1 統計情報とは</h3>
+            <p>
+                オプティマイザが正確な実行計画を立てるには、テーブルの<strong>統計情報</strong>が必須です。
+                統計情報には、テーブルの行数、カラムの値の分布、カラム間の相関などが含まれます。
+            </p>
+
+            <h3>5.2 統計情報を確認する</h3>
+            <div class="code-block">
+                <pre>-- テーブル全体の統計
+SELECT 
+    schemaname,
+    tablename,
+    n_live_tup as row_count,
+    n_dead_tup as dead_rows,
+    last_vacuum,
+    last_analyze
+FROM pg_stat_user_tables 
+WHERE tablename = 'players';
+
+-- カラムレベルの統計
+SELECT 
+    attname,
+    n_distinct,
+    avg_width,
+    null_frac
+FROM pg_stats 
+WHERE table_name = 'players' 
+ORDER BY attname;</pre>
+            </div>
+
+            <h3>5.3 ANALYZE コマンドの重要性</h3>
+            <p>
+                大量の<code>INSERT</code>や<code>DELETE</code>を行った直後は、統計情報が古くなります。
+                その場合、オプティマイザが「間違った計画」を立ててしまいます。
+            </p>
+
+            <div class="experiment-box">
+                <h4>🧪 実験3：統計情報の影響を観察</h4>
+                <div class="code-block">
+                    <pre>-- 1. 100万件の新規プレイヤーを挿入
+INSERT INTO players (id, name, level, guild_id, login_count, created_at)
+SELECT 
+    100000 + i,
+    'NewPlayer_' || i,
+    floor(random() * 100 + 1),
+    floor(random() * 50 + 1),
+    0,
+    CURRENT_TIMESTAMP
+FROM generate_series(1, 100000) i;
+
+-- 2. ANALYZEなしで実行計画を確認
+EXPLAIN SELECT * FROM players WHERE level = 50;
+
+-- 3. ANALYZEを実行
+ANALYZE players;
+
+-- 4. 実行計画を再確認
+EXPLAIN SELECT * FROM players WHERE level = 50;</pre>
+                </div>
+                <p><strong>観察：</strong> <code>rows</code> の予測値がどう変わりましたか？</p>
+            </div>
+
+            <div class="important-box">
+                <h4>💡 定期的な ANALYZE の重要性</h4>
+                <p>
+                    大規模テーブルでは、定期的に<code>ANALYZE</code>を実行する必要があります。
+                    PostgreSQL 10以降は、自動ANALYZEが有効になっているため、通常は手動実行が不要です。
+                </p>
+                <p>
+                    大量のDML実行直後や、本番環境でのチューニングが必要な場合は、
+                    手動で<code>ANALYZE</code>を実行してください。
+                </p>
+            </div>
+        </section>
+
+        <section id="join-algo">
+            <h2>6. 結合アルゴリズムの正体</h2>
+            
+            <h3>6.1 3つの結合方式</h3>
+            <p>
+                データベースは、2つのテーブルを結合する際に、3種類のアルゴリズムから最適なものを選びます。
+            </p>
+
+            <h3>6.2 (1) Nested Loop Join</h3>
+            <p>
+                外側テーブルの各行について、内側テーブルを全走査する「二重ループ」方式です。
+                少量のデータ結合に向いています。
+            </p>
+            <div class="code-block">
+                <pre>-- Nested Loopを誘発（特定1プレイヤーのギルド情報）
+EXPLAIN ANALYZE 
+SELECT p.name, g.guild_name 
+FROM players p 
+JOIN guilds g ON p.guild_id = g.id 
+WHERE p.id = 1;</pre>
+            </div>
+            <div class="result">
+                <pre>Nested Loop  (cost=0.29..15.20 rows=1 width=...)
+  -&gt;  Index Scan using players_pkey on players p
+  -&gt;  Index Scan using guilds_pkey on guilds g</pre>
+            </div>
+
+            <h3>6.3 (2) Hash Join</h3>
+            <p>
+                小さいテーブルをメモリ上にハッシュテーブルとして構築し、
+                大きいテーブルをスキャンしながら検索する方式です。大量データ結合に最適。
+            </p>
+            <div class="code-block">
+                <pre>-- Hash Joinを誘発（全プレイヤーとギルドの結合）
+EXPLAIN ANALYZE 
+SELECT p.name, g.guild_name 
+FROM players p 
+JOIN guilds g ON p.guild_id = g.id;</pre>
+            </div>
+            <div class="result">
+                <pre>Hash Join  (cost=2.00..5432.10 rows=90000 width=...)
+  Hash Cond: (p.guild_id = g.id)
+  -&gt;  Seq Scan on players p
+  -&gt;  Hash  (cost=1.00..1.00 rows=50 width=...)
+       -&gt;  Seq Scan on guilds g</pre>
+            </div>
+
+            <h3>6.4 (3) Merge Join</h3>
+            <p>
+                両テーブルが結合キーでソート済み（またはインデックスがある）場合、
+                テープドライブのマージソートのように効率的に結合します。
+            </p>
+            <div class="code-block">
+                <pre>-- 複合インデックスを作成
+CREATE INDEX idx_players_guild_level ON players(guild_id, level);
+
+-- Merge Joinを誘発（ソート条件が満たされる）
+EXPLAIN ANALYZE 
+SELECT p.id, p.name, g.guild_name 
+FROM players p 
+JOIN guilds g ON p.guild_id = g.id 
+ORDER BY p.guild_id, p.level;</pre>
+            </div>
+
+            <div class="confirmation-box">
+                <h4>📝 定着確認2：結合方式の選択</h4>
+                <p>以下のシナリオで、どの結合方式が選ばれやすいか答えてください。</p>
+                <ol>
+                    <li>小テーブル（100行）× 大テーブル（100万行）の結合：？</li>
+                    <li>大テーブル（100万行）× 大テーブル（100万行）の結合：？</li>
+                    <li>小テーブル（10行）× 小テーブル（50行）の結合：？</li>
+                </ol>
+                <details>
+                    <summary>解答を表示</summary>
+                    <p>1. Hash Join（メモリに小テーブルを展開するため高速）</p>
+                    <p>2. Hash Join（またはMerge Join if ソート済み）</p>
+                    <p>3. Nested Loop（テーブルサイズが小さいため有効）</p>
+                </details>
+            </div>
+        </section>
+
+        <section id="drill">
+            <h2>7. SQLドリル：最終演習（解答例付き）</h2>
+            
+            <h3>【演習1】スロークエリを救え（難易度：⭐⭐）</h3>
+            <div class="drill-box">
+                <p>
+                    以下のクエリは現在 <code>Seq Scan</code> で非常に低速です。
+                    実行計画を確認し、適切なインデックスを作成して <code>Index Scan</code> に変更してください。
+                    <strong>実行時間を1/5以下にすることが目標です。</strong>
+                </p>
+                <div class="code-block">
+                    <pre>SELECT name, created_at 
+FROM players 
+WHERE created_at >= '2023-12-01' 
+  AND login_count > 300;</pre>
+                </div>
+            </div>
+
+            <details>
+                <summary>演習1の解答例を表示</summary>
+                <div class="code-block">
+                    <pre>-- 1. 現状を確認
+EXPLAIN ANALYZE 
+SELECT name, created_at 
+FROM players 
+WHERE created_at >= '2023-12-01' 
+  AND login_count > 300;
+
+-- 2. 複合インデックスを作成（等号や範囲条件の順序に注意）
+CREATE INDEX idx_players_created_login ON players(created_at, login_count);
+
+-- 3. 再度実行計画を確認
+EXPLAIN ANALYZE 
+SELECT name, created_at 
+FROM players 
+WHERE created_at >= '2023-12-01' 
+  AND login_count > 300;</pre>
+                </div>
+                <p>
+                    <strong>解説：</strong> 
+                    このクエリは両方とも範囲条件なので、created_at が より選択性が高いため（日付は多くのバリエーション）、
+                    created_at を左に配置するのが最適です。
+                </p>
+            </details>
+
+            <h3>【演習2】インデックスが使われない理由を特定（難易度：⭐⭐⭐）</h3>
+            <div class="drill-box">
+                <p>
+                    <code>idx_players_level</code> インデックスが存在するにも関わらず、
+                    以下のクエリは <code>Seq Scan</code> になります。
+                    なぜ使われないのか理由を述べ、
+                    インデックスが使われるようにSQLを書き直してください。
+                </p>
+                <div class="code-block">
+                    <pre>-- idx_players_level インデックスがあるのに使われない
+SELECT * FROM players WHERE level * 2 > 180;</pre>
+                </div>
+            </div>
+
+            <details>
+                <summary>演習2の解答例を表示</summary>
+                <div class="code-block">
+                    <pre>-- 【原因】
+-- インデックス列(level)に対して演算(*2)を行っているため、
+-- インデックスが使用不可になります。
+
+-- 【修正案1】右辺で計算
+EXPLAIN ANALYZE 
+SELECT * FROM players WHERE level > 180 / 2;  -- level > 90
+
+-- 【修正案2】型が安全な書き方
+EXPLAIN ANALYZE 
+SELECT * FROM players WHERE level > 90;</pre>
+                </div>
+                <p>
+                    <strong>解説：</strong> 
+                    インデックスは「カラムの値そのもの」に対して構築されているため、
+                    カラムに関数や演算を適用するとインデックスが使えなくなります。
+                    右辺で計算を済ませると、インデックスが有効になります。
+                </p>
+            </details>
+
+            <h3>【演習3】結合クエリのチューニング（難易度：⭐⭐⭐）</h3>
+            <div class="drill-box">
+                <p>
+                    以下のクエリをEXPLAIN ANALYZEで実行し、
+                    どの結合方式が選ばれているか答えてください。
+                    また、Hash Joinではなく Merge Join を使うようにチューニングしてください。
+                </p>
+                <div class="code-block">
+                    <pre>SELECT p.id, p.name, p.level, g.guild_name 
+FROM players p 
+JOIN guilds g ON p.guild_id = g.id 
+WHERE p.level >= 50 
+ORDER BY p.guild_id, p.level;</pre>
+                </div>
+            </div>
+
+            <details>
+                <summary>演習3の解答例を表示</summary>
+                <div class="code-block">
+                    <pre>-- 1. 現状確認（Hash Joinが選ばれる可能性が高い）
+EXPLAIN ANALYZE 
+SELECT p.id, p.name, p.level, g.guild_name 
+FROM players p 
+JOIN guilds g ON p.guild_id = g.id 
+WHERE p.level >= 50 
+ORDER BY p.guild_id, p.level;
+
+-- 2. Merge Joinを誘発するインデックスを作成
+-- guild_id でソートされ、内側では level でソートされている複合インデックス
+CREATE INDEX idx_players_guild_level ON players(guild_id, level);
+
+-- 3. guild テーブルにも同様のインデックスがあれば効果的
+-- （guild はサイズが小さいため、この例では効果が限定的）
+
+-- 4. 再度実行計画を確認（Merge Join が選ばれるはず）
+EXPLAIN ANALYZE 
+SELECT p.id, p.name, p.level, g.guild_name 
+FROM players p 
+JOIN guilds g ON p.guild_id = g.id 
+WHERE p.level >= 50 
+ORDER BY p.guild_id, p.level;</pre>
+                </div>
+                <p>
+                    <strong>解説：</strong> 
+                    ORDER BY で guild_id と level でソートされているため、
+                    複合インデックス(guild_id, level)を作成すると、
+                    オプティマイザが Merge Join を選びやすくなります。
+                </p>
+            </details>
+
+            <h3>【演習4】統計情報とオプティマイザ（難易度：⭐⭐⭐）</h3>
+            <div class="drill-box">
+                <p>
+                    以下の手順を実行し、統計情報が実行計画にどう影響するか観察してください。
+                </p>
+                <ol>
+                    <li>大量のプレイヤーレコードを INSERT する</li>
+                    <li>ANALYZE を実行「前」「後」で、同じクエリの rows 予測値を比較</li>
+                    <li>オプティマイザの判断がどう変わるか説明する</li>
+                </ol>
+            </div>
+
+            <details>
+                <summary>演習4の解答例を表示</summary>
+                <div class="code-block">
+                    <pre>-- 1. 大量の新規データを挿入（レベルが高いプレイヤーばかり）
+INSERT INTO players (id, name, level, guild_id, login_count, created_at)
+SELECT 
+    200000 + i,
+    'HighLevel_' || i,
+    floor(random() * 30 + 71),  -- Lv 71-100 に集中
+    floor(random() * 50 + 1),
+    floor(random() * 500),
+    CURRENT_TIMESTAMP
+FROM generate_series(1, 50000) i;
+
+-- 2. ANALYZE なしで実行計画を確認（予測値が古い）
+EXPLAIN SELECT * FROM players WHERE level >= 80;
+
+-- 3. ANALYZE を実行
+ANALYZE players;
+
+-- 4. 実行計画を再確認（rows 予測値が更新される）
+EXPLAIN SELECT * FROM players WHERE level >= 80;</pre>
+                </div>
+                <p>
+                    <strong>期待される結果：</strong> 
+                    ANALYZE 後、rows の予測値が増加します。
+                    これにより、オプティマイザはより正確な計画を立てられるようになります。
+                </p>
+            </details>
+
+        <hr>
+        <section id="conclusion">
+            <h2>まとめ：実行計画から見えるデータベース設計の本質</h2>
+            <p>
+                本記事を通じて、SQLの実行計画をコントロールすることが、
+                いかにシステムのパフォーマンスに直結するかを学びました。
+            </p>
+            <p>
+                データベースエンジニアの最重要スキルは「推測と検証」です：
+            </p>
+            <ol>
+                <li><strong>推測：</strong> 「このクエリは遅そうだ。なぜなら...」と仮説を立てる</li>
+                <li><strong>検証：</strong> EXPLAIN ANALYZE で実測値を確認する</li>
+                <li><strong>改善：</strong> インデックス設計やクエリ書き直しで最適化</li>
+                <li><strong>再検証：</strong> 改善後の実行計画を確認し、効果を計測</li>
+            </ol>
+            <p>
+                本科目で学んだインデックス、統計情報、結合アルゴリズムといった知識が、
+                この「推測と検証」のサイクルを支えています。
+            </p>
+        </section>
+
+        <footer>
+            <p>作成：DB工学 技術解説プロジェクト</p>
+            <p><strong>PostgreSQL 17</strong> | <strong>実行計画</strong></p>
+            <p>想定学習時間：約90分（読解 + 実験 + 演習）</p>
+            <p style="font-size: 0.85rem; color: #64748b; margin-top: 1.5rem;">📝 <em>作成所要時間：約18時間</em></p>
+        </footer>
+    </main>
+</body>
+</html>

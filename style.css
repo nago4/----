@@ -1,0 +1,544 @@
+:root {
+    --primary: #2563eb;
+    --secondary: #64748b;
+    --success: #16a34a;
+    --warning: #d97706;
+    --danger: #dc2626;
+    --info: #0891b2;
+    --bg: #f8fafc;
+    --card-bg: #ffffff;
+    --code-bg: #1e293b;
+    --text: #0f172a;
+    --border: #e2e8f0;
+}
+* {
+    box-sizing: border-box;
+}
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background-color: var(--bg);
+    color: var(--text);
+    line-height: 1.8;
+    margin: 0;
+    padding: 0;
+}
+/* ===== Header ===== */
+header {
+    background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%);
+    color: white;
+    padding: 4rem 2rem;
+    text-align: center;
+    box-shadow: 0 4px 6px -1px rgba(0,0,0,0.15);
+}
+header h1 {
+    margin: 0;
+    font-size: 2.5rem;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+}
+header .meta {
+    margin: 1rem 0 0 0;
+    font-size: 1.05rem;
+    opacity: 0.95;
+    font-weight: 500;
+}
+/* Navigation */
+nav {
+    margin-top: 2rem;
+    background: rgba(255, 255, 255, 0.1);
+    padding: 1.5rem;
+    border-radius: 8px;
+    backdrop-filter: blur(10px);
+}
+nav ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 2rem;
+}
+nav a {
+    color: white;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.95rem;
+    transition: opacity 0.2s ease;
+}
+nav a:hover {
+    opacity: 0.8;
+    text-decoration: underline;
+}
+
+/* ===== Main Content ===== */
+main {
+    max-width: 980px;
+    margin: 3rem auto;
+    padding: 0 1.5rem;
+}
+
+section {
+    background: var(--card-bg);
+    padding: 3rem;
+    margin-bottom: 2.5rem;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    border: 1px solid var(--border);
+}
+
+section:last-of-type {
+    margin-bottom: 0;
+}
+
+/* ===== Headings ===== */
+h1 { font-size: 2.5rem; margin: 0; }
+h2 { 
+    color: var(--primary);
+    border-bottom: 3px solid var(--primary);
+    padding-bottom: 0.8rem;
+    margin: 0 0 2rem 0;
+    font-size: 2rem;
+}
+h3 { 
+    color: var(--secondary);
+    margin: 2rem 0 1rem 0;
+    font-size: 1.3rem;
+    font-weight: 600;
+}
+h4 { 
+    color: var(--primary);
+    margin: 1.5rem 0 1rem 0;
+    font-size: 1.1rem;
+}
+
+/* ===== Lists ===== */
+ul, ol {
+    line-height: 1.9;
+    margin: 1rem 0;
+    padding-left: 2rem;
+}
+
+li {
+    margin-bottom: 0.8rem;
+}
+
+/* ===== Code Blocks ===== */
+.code-block {
+    background: var(--code-bg);
+    color: #e2e8f0;
+    padding: 1.5rem;
+    border-radius: 8px;
+    overflow-x: auto;
+    margin: 1.5rem 0;
+    border-left: 4px solid var(--primary);
+    font-size: 0.9rem;
+}
+
+.filename {
+    color: #94a3b8;
+    font-size: 0.85rem;
+    font-family: 'Fira Code', 'Cascadia Code', monospace;
+    margin: 0 0 1rem 0;
+    display: block;
+    font-weight: 600;
+}
+
+pre {
+    margin: 0;
+    font-family: 'Fira Code', 'Cascadia Code', monospace;
+    line-height: 1.5;
+    overflow-x: auto;
+}
+
+code {
+    background: rgba(39, 39, 42, 0.2);
+    padding: 0.2rem 0.5rem;
+    border-radius: 3px;
+    font-family: 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 0.9em;
+}
+
+.code-block code {
+    background: none;
+    padding: 0;
+    color: inherit;
+}
+
+/* ===== Special Boxes ===== */
+.result {
+    background: #f1f5f9;
+    border-left: 4px solid var(--secondary);
+    padding: 1.5rem;
+    margin: 1.5rem 0;
+    border-radius: 6px;
+    font-size: 0.95rem;
+}
+
+.result h4 {
+    margin-top: 0;
+    color: var(--secondary);
+}
+.result pre {
+    background: white;
+    padding: 1rem;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    overflow-x: auto;
+    color: var(--code-bg);
+}
+.experiment-box {
+    background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%);
+    border: 2px solid var(--success);
+    padding: 1.5rem;
+    border-radius: 8px;
+    margin: 2rem 0;
+}
+
+.experiment-box h4 {
+    color: var(--success);
+    margin-top: 0;
+    font-size: 1.15rem;
+}
+
+.step-box {
+    background: linear-gradient(135deg, #fef3c7 0%, #fef2f2 100%);
+    border: 2px solid var(--warning);
+    padding: 1.5rem;
+    border-radius: 8px;
+    margin: 2rem 0;
+}
+
+.step-box h4 {
+    color: var(--warning);
+    margin-top: 0;
+}
+
+.step-box ol {
+    margin: 1rem 0;
+}
+
+.important-box {
+    background: linear-gradient(135deg, #fef2f2 0%, #ffe4e6 100%);
+    border: 2px solid var(--danger);
+    padding: 1.5rem;
+    border-radius: 8px;
+    margin: 2rem 0;
+}
+
+.important-box h4 {
+    color: var(--danger);
+    margin-top: 0;
+}
+
+.formula-box {
+    background: #f5f3ff;
+    border: 2px solid #a78bfa;
+    padding: 1.5rem;
+    border-radius: 8px;
+    margin: 1.5rem 0;
+    font-family: 'Fira Code', monospace;
+}
+
+.formula-box h4 {
+    color: #7c3aed;
+    margin-top: 0;
+}
+
+.formula-box ul {
+    padding-left: 1.5rem;
+}
+
+.drill-box {
+    background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+    border-left: 4px solid var(--warning);
+    padding: 1.5rem;
+    margin: 2rem 0;
+    border-radius: 6px;
+}
+
+.confirmation-box {
+    background: #f1f5f9;
+    border: 2px solid var(--info);
+    padding: 1.5rem;
+    border-radius: 8px;
+    margin: 2rem 0;
+}
+
+.confirmation-box h4 {
+    color: var(--info);
+    margin-top: 0;
+}
+
+.warning {
+    color: var(--danger);
+    font-weight: 600;
+    margin: 1rem 0;
+}
+
+.note {
+    color: var(--secondary);
+    font-size: 0.9rem;
+    margin: 0.5rem 0;
+    font-style: italic;
+}
+
+/* ===== Tables ===== */
+.comparison-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1.5rem 0;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.comparison-table thead {
+    background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%);
+    color: white;
+}
+
+.comparison-table th {
+    padding: 1rem;
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.95rem;
+}
+
+.comparison-table td {
+    padding: 0.8rem 1rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.comparison-table tbody tr:nth-child(odd) {
+    background: #f8fafc;
+}
+
+.comparison-table tbody tr:hover {
+    background: #f1f5f9;
+}
+
+.comparison-table code {
+    background: rgba(39, 39, 42, 0.1);
+}
+
+/* ===== Details/Collapsible ===== */
+details {
+    margin: 1.5rem 0;
+    padding: 1rem;
+    background: #f8fafc;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+}
+
+details[open] {
+    background: #f1f5f9;
+}
+
+summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--primary);
+    user-select: none;
+    transition: color 0.2s ease;
+    padding: 0.5rem;
+    margin: -0.5rem;
+    border-radius: 4px;
+}
+
+summary:hover {
+    color: var(--info);
+    background: rgba(39, 102, 194, 0.1);
+}
+
+details > *:not(summary) {
+    margin-top: 1rem;
+}
+
+/* ===== Checkboxes ===== */
+input[type="checkbox"] {
+    margin-right: 0.5rem;
+    width: 1.2rem;
+    height: 1.2rem;
+    cursor: pointer;
+    vertical-align: middle;
+}
+
+/* ===== Paragraph and Text ===== */
+p {
+    margin: 1rem 0;
+}
+
+strong {
+    font-weight: 600;
+    color: var(--primary);
+}
+
+a {
+    color: var(--primary);
+    text-decoration: none;
+    transition: color 0.2s ease;
+}
+
+a:hover {
+    text-decoration: underline;
+    color: var(--info);
+}
+
+hr {
+    border: 0;
+    border-top: 2px solid var(--border);
+    margin: 3rem 0;
+}
+
+/* ===== Footer ===== */
+footer {
+    text-align: center;
+    padding: 3rem 1.5rem;
+    color: var(--secondary);
+    font-size: 0.95rem;
+    border-top: 2px solid var(--border);
+}
+
+footer p {
+    margin: 0.5rem 0;
+}
+
+footer strong {
+    color: var(--primary);
+    font-weight: 700;
+}
+
+/* ===== Responsive Design ===== */
+@media (max-width: 768px) {
+    header {
+        padding: 2.5rem 1rem;
+    }
+
+    header h1 {
+        font-size: 1.8rem;
+    }
+
+    nav ul {
+        gap: 1rem;
+        flex-direction: column;
+    }
+
+    nav a {
+        font-size: 0.9rem;
+    }
+
+    section {
+        padding: 2rem;
+    }
+
+    h2 {
+        font-size: 1.5rem;
+    }
+
+    h3 {
+        font-size: 1.1rem;
+    }
+
+    .comparison-table th,
+    .comparison-table td {
+        padding: 0.7rem;
+        font-size: 0.9rem;
+    }
+
+    .code-block {
+        padding: 1rem;
+        font-size: 0.85rem;
+    }
+}
+
+@media (max-width: 480px) {
+    header {
+        padding: 2rem 0.75rem;
+    }
+
+    header h1 {
+        font-size: 1.5rem;
+    }
+
+    header .meta {
+        font-size: 0.9rem;
+    }
+
+    nav {
+        padding: 1rem;
+        margin-top: 1.5rem;
+    }
+
+    nav ul {
+        gap: 0.5rem;
+    }
+
+    section {
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+    }
+
+    h2 {
+        font-size: 1.3rem;
+    }
+
+    h3 {
+        font-size: 1rem;
+    }
+
+    .comparison-table {
+        font-size: 0.85rem;
+    }
+
+    .comparison-table th,
+    .comparison-table td {
+        padding: 0.5rem;
+    }
+
+    main {
+        margin: 1.5rem auto;
+    }
+}
+
+/* ===== Print Styles ===== */
+@media print {
+    body {
+        background: white;
+        color: black;
+    }
+
+    header {
+        background: none;
+        color: black;
+        border-bottom: 2px solid #333;
+        padding: 2rem 0;
+    }
+
+    section {
+        break-inside: avoid;
+        page-break-inside: avoid;
+        box-shadow: none;
+        border: 1px solid #ddd;
+    }
+
+    nav {
+        display: none;
+    }
+
+    .code-block {
+        background: white;
+        color: black;
+        border: 1px solid #ddd;
+    }
+
+    pre {
+        color: black;
+        background: white;
+    }
+
+    a {
+        color: black;
+        text-decoration: underline;
+    }
+}
