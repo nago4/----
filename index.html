@@ -248,6 +248,14 @@ EXPLAIN SELECT * FROM players WHERE level = 50;
 -- 実際に実行して実測値を確認
 EXPLAIN ANALYZE SELECT * FROM players WHERE level = 50;</pre>
             </div>
+            <div class="code-explanation">
+                <h5>📍 コード解説</h5>
+                <ul>
+                    <li><strong>1行目（EXPLAINコマンド）：</strong> EXPLAINはクエリを実行せず、オプティマイザが「これぐらいのコストがかかると予想している」という理論値を返します。実際のデータベース操作は行いません。</li>
+                    <li><strong>4行目（EXPLAIN ANALYZEコマンド）：</strong> ANALYZEをつけるとクエリを実際に実行し、実際にかかった時間（actual time）、実際に取得した行数（actual rows）などの実測値が得られます。デバッグの際はこちらが非常に重要です。</li>
+                    <li><strong>WHERE level = 50：</strong> この条件では、全100,000行をすべて検索する必要があり、インデックスがなければ全件スキャンが発生します。</li>
+                </ul>
+            </div>
 
             <div class="result">
                 <h4>📊 出力例（EXPLAIN）：</h4>
@@ -294,8 +302,14 @@ Execution Time: 14.612 ms</pre>
                     <pre>EXPLAIN ANALYZE SELECT * FROM players WHERE level = 100;
 EXPLAIN ANALYZE SELECT * FROM players WHERE level >= 1 AND level <= 10;
 EXPLAIN ANALYZE SELECT * FROM players WHERE guild_id = 5;</pre>
-                </div>
-                <p><strong>考察：</strong> 予測値と実測値にズレがある場合、その理由は何でしょうか？</p>
+                </div>                <div class=\"code-explanation\">
+                    <h5>📍 コード解説</h5>
+                    <ul>
+                        <li><strong>1行目（WHERE level = 100）：</strong> 特定の単一値を指定。オプティマイザは統計情報から「この値は約1,000行あるだろう」と予測しますが、実際に100が出現する度数が予測と異なると、実測値とズレます</li>
+                        <li><strong>2行目（WHERE level >= 1 AND level <= 10）：</strong> 範囲条件です。初心者レベルの絞り込みなので、実際には少数行かもしれません。統計情報が古い場合、大きなズレが発生します</li>
+                        <li><strong>3行目（WHERE guild_id = 5）：</strong> ギルド5に属するプレイヤーの数。各ギルドの人数分布が均等でない場合、予測値と実測値が大きく異なり、実行計画の選択が間違うことがあります</li>
+                    </ul>
+                </div>                <p><strong>考察：</strong> 予測値と実測値にズレがある場合、その理由は何でしょうか？</p>
             </div>
         </section>
 
@@ -312,8 +326,14 @@ CREATE INDEX idx_players_level ON players(level);
 
 -- 【After】 インデックスあり
 EXPLAIN ANALYZE SELECT * FROM players WHERE level = 50;</pre>
+            </div>            <div class=\"code-explanation\">
+                <h5>📍 コード解説</h5>
+                <ul>
+                    <li><strong>2行目（Beforeの実行計画）：</strong> インデックス作成前は、全100,000行をすべてスキャンする「Seq Scan」が選ばれます。10万行を一つずつフィルターするため、時間がかかります</li>
+                    <li><strong>5行目（CREATE INDEX）：</strong> level列にインデックスを作成します。このインデックスは「level = X のデータはファイルのどこにあるか」を高速に検索できるB-treeデータ構造です</li>
+                    <li><strong>8行目（Afterの実行計画）：</strong> インデックス作成後、PostgreSQLのオプティマイザは「インデックスを使ったほうが安い」と判断し、「Index Scan」に自動的に切り替わります。10倍以上の高速化が期待できます</li>
+                </ul>
             </div>
-
             <div class="result">
                 <h4>📊 実行結果（インデックス作成前）：</h4>
                 <pre>Execution Time: 14.612 ms</pre>
@@ -362,8 +382,14 @@ EXPLAIN ANALYZE SELECT * FROM players WHERE level BETWEEN 30 AND 70;
 
 -- C: 絞り込みが弱い（対象が多い）
 EXPLAIN ANALYZE SELECT * FROM players WHERE level >= 1;</pre>
-                </div>
-                <p><strong>予想：</strong> CはSeq Scanに変わるはずです。なぜでしょうか？</p>
+                </div>                <div class=\"code-explanation\">
+                    <h5>📍 コード解説</h5>
+                    <ul>
+                        <li><strong>A: WHERE level = 100：</strong> レベル100は、上級者の中でも最高レベルです。全体の約1%未満と予想でき、インデックスが有効です。「Index Scan」を選びます</li>
+                        <li><strong>B: WHERE level BETWEEN 30 AND 70：</strong> 中級者と初心者上位を指定。全体の約40～50%に該当し、インデックスを使うメリットが減少します。この境界では「Bitmap Index Scan」が選ばれる可能性があります</li>
+                        <li><strong>C: WHERE level >= 1：</strong> ほぼ全行に該当します。インデックスを経由してランダムアクセスするコストが、全行を順序よく読むコストを上回り、「Seq Scan」に切り替わります。これが「コストベース最適化」の本質です</li>
+                    </ul>
+                </div>                <p><strong>予想：</strong> CはSeq Scanに変わるはずです。なぜでしょうか？</p>
             </div>
 
             <div class="important-box">
@@ -399,8 +425,16 @@ EXPLAIN SELECT * FROM players WHERE name = LOWER('PLAYER_100');
 
 -- ✅ 良い例2：演算を右辺に
 EXPLAIN SELECT * FROM players WHERE level > 100 / 2;</pre>
+            </div>            <div class=\"code-explanation\">
+                <h5>📍 コード解説</h5>
+                <ul>
+                    <li><strong>2行目（LOWER(name) = ...）：</strong> インデックスはname列の「元々の値」に対して構築されています。LOWER()関数を適用した値を検索しているので、インデックスが使えず、Seq Scanになります。関数インデックスを別途作成する必要があります</li>
+                    <li><strong>5行目（level * 2 > 100）：</strong> level列に「*2」という演算を適用しているため、インデックスが使えません。WHERE句でlevel列そのものに条件がないので、インデックスの恩恵が受けられません</li>
+                    <li><strong>8行目（name = 100）：</strong> name列はTEXT型ですが、右辺には数値を比較しています。型変換が行われるため、インデックスが使えなくなる可能性があります</li>
+                    <li><strong>11行目（正しい例1）：</strong> 関数をLOWER('PLAYER_100')のように「定数に対して」適用し、インデックス列LOWER(name)と比較します。関数インデックスがあれば使用されます</li>
+                    <li><strong>14行目（正しい例2）：</strong> 演算を「右辺」で行い、インデックス列「level」はそのままです。level > 50 という形になり、インデックスが有効に働きます</li>
+                </ul>
             </div>
-
             <div class="confirmation-box">
                 <h4>📝 定着確認1：実行計画の判断</h4>
                 <ol>
@@ -449,6 +483,14 @@ FROM pg_stats
 WHERE table_name = 'players' 
 ORDER BY attname;</pre>
             </div>
+            <div class="code-explanation">
+                <h5>📍 コード解説</h5>
+                <ul>
+                    <li><strong>4～5行目（n_live_tup, n_dead_tup）：</strong> 「今現在テーブルに存在する行数」と「DELETE後に未削除のゴミ行数」です。このrow_countを基に、オプティマイザは「全体何行のうち、何行が該当するか」の比率を計算します</li>
+                    <li><strong>6～7行目（last_vacuum, last_analyze）：</strong> 前回のVACUUM/ANALYZEの日時です。この値が古い場合、統計情報が「古い」状態であり、実行計画が間違う原因になります。オプティマイザの判断精度は統計情報の「鮮度」に依存します</li>
+                    <li><strong>14～17行目（カラムレベルの統計）：</strong> 「n_distinct」は「そのカラムにいくつ異なる値が存在するか」の推定値です。例えば、level列のn_distinctが100なら、「100種類の異なるレベル値がある」という意味で、これが「level=50」でどれぐらいの行がヒットするかの推測に使われます。「avg_width」は「1行あたりのバイト数」で、テーブルスキャンのコスト計算に使われます。「null_frac」は「NULLの割合」です</li>
+                </ul>
+            </div>
 
             <h3>5.3 ANALYZE コマンドの重要性</h3>
             <p>
@@ -478,6 +520,15 @@ ANALYZE players;
 
 -- 4. 実行計画を再確認
 EXPLAIN SELECT * FROM players WHERE level = 50;</pre>
+                </div>
+                <div class="code-explanation">
+                    <h5>📍 コード解説</h5>
+                    <ul>
+                        <li><strong>2～10行目（INSERT文）：</strong> 「100000 + i」により、ID 100001～200000の新規プレイヤーを100万件追加します。統計情報は更新されていないため、オプティマイザはまだ「元の10万行」だと思い込んでいます</li>
+                        <li><strong>13行目（ANALYZEなしの実行計画）：</strong> この段階では、テーブルには20万行があるのに、統計情報は「10万行のまま」です。したがって、「rows = 1000」という古い予測値のままで、間違った実行計画の選択につながります</li>
+                        <li><strong>16行目（ANALYZEコマンド）：</strong> 統計情報をスキャンして最新化します。PostgreSQLがテーブルをサンプリングして「今は20万行あり、各レベルの分布はこのようになっている」という情報を更新します</li>
+                        <li><strong>19行目（ANALYZE後の実行計画）：</strong> 統計情報が更新された後、WHERE level = 50の「rows」は「2000」のように新しい値に変わります。これで、オプティマイザはより正確な実行計画を選べるようになります</li>
+                    </ul>
                 </div>
                 <p><strong>観察：</strong> <code>rows</code> の予測値がどう変わりましたか？</p>
             </div>
@@ -516,6 +567,14 @@ FROM players p
 JOIN guilds g ON p.guild_id = g.id 
 WHERE p.id = 1;</pre>
             </div>
+            <div class="code-explanation">
+                <h5>📍 コード解説</h5>
+                <ul>
+                    <li><strong>2～6行目（Nested Loopクエリ構造）：</strong> 「WHERE p.id = 1」により、playersテーブルから「1行だけ」取得します。その後、その1行のguild_idを使って、guildsテーブルから対応するギルド情報を取得します。「外側が1行」のため、Nested Loopは非常に効率的です</li>
+                    <li><strong>結果の「Index Scan using players_pkey」：</strong> PRIMARY KEY（id）のインデックスを使って、プレイヤーID=1のレコードを「1行」だけ高速に取得します。これが外側ループになります</li>
+                    <li><strong>結果の「Index Scan using guilds_pkey on guilds g」：</strong> 取得したプレイヤーのguild_idを使って、guildsテーブルのPRIMARY KEYインデックスでギルド情報を検索します。「1行のプレイヤーに対して1回の検索」なので、Nested Loopでも高速です</li>
+                </ul>
+            </div>
             <div class="result">
                 <pre>Nested Loop  (cost=0.29..15.20 rows=1 width=...)
   -&gt;  Index Scan using players_pkey on players p
@@ -533,6 +592,15 @@ EXPLAIN ANALYZE
 SELECT p.name, g.guild_name 
 FROM players p 
 JOIN guilds g ON p.guild_id = g.id;</pre>
+            </div>
+            <div class="code-explanation">
+                <h5>📍 コード解説</h5>
+                <ul>
+                    <li><strong>2～5行目（Hash Joinの条件）：</strong> WHERE句がないため「全プレイヤー（約10万行）と全ギルド（50行）の結合」になります。90,000行の結合（WHERE句なしだと全プレイヤーがギルドに属する）になり、Nested Loopでは「10万×50の検索回数」になって遅いため、Hash Joinが選ばれます</li>
+                    <li><strong>「Hash Cond: (p.guild_id = g.id)」：</strong> 結合条件を指定しています。小さいテーブル（guilds: 50行）をハッシュテーブルに変換し、大きいテーブル（players: 10万行）の各行のguild_idでハッシュ検索します</li>
+                    <li><strong>「Seq Scan on players p」：</strong> 全10万行を順序よく読み込みます。その各行について、ハッシュテーブル内で「このguild_idのギルド情報」を「O(1)の高速検索」で取得します</li>
+                    <li><strong>「Hash (... guilds g)」：</strong> 50行のギルドテーブルをメモリ上のハッシュテーブルに構築します。「メモリがあれば」Hash Joinは大量結合で非常に高速です。ただしメモリが不足すると、ディスクにあふれて遅くなります</li>
+                </ul>
             </div>
             <div class="result">
                 <pre>Hash Join  (cost=2.00..5432.10 rows=90000 width=...)
@@ -557,6 +625,14 @@ SELECT p.id, p.name, g.guild_name
 FROM players p 
 JOIN guilds g ON p.guild_id = g.id 
 ORDER BY p.guild_id, p.level;</pre>
+            </div>
+            <div class="code-explanation">
+                <h5>📍 コード解説</h5>
+                <ul>
+                    <li><strong>2行目（複合インデックス作成）：</strong> 「(guild_id, level)」の順で「ソート済み」のインデックスを作成します。これはplayersテーブルのデータが「guild_idで整理され、その中でlevelでソート」された状態になります。この「ソート済みインデックス」があるかどうかが、Merge Joinが選ばれるかの大きな要因です</li>
+                    <li><strong>6～9行目（ORDER BY guild_id, level）：</strong> 「ORDER BY」でguild_idとlevelでソート結果を求めています。オプティマイザは「あ、playersテーブルはすでに(guild_id, level)でソート済みのインデックスがある」と認識し、「新たにソートする必要がない」と判断します。これがMerge Joinを使う条件になります</li>
+                    <li><strong>結果的な効率性：</strong> Merge Joinは「ソート済みの左テーブルと右テーブルを、2本のポインタで同時にスキャン」する方式で、ソート不要なため「Hash Joinより高速」になり得ます。特にメモリが余っていない環境、大量結合でソート結果が必要な場合に有効です</li>
+                </ul>
             </div>
 
             <div class="confirmation-box">
@@ -614,6 +690,14 @@ FROM players
 WHERE created_at >= '2023-12-01' 
   AND login_count > 300;</pre>
                 </div>
+                <div class="code-explanation\">
+                    <h5>📍 コード解説</h5>
+                    <ul>
+                        <li><strong>2～6行目（現状確認）：</strong> 2つの範囲条件（created_at >= と login_count > ）でフィルターしています。現在はSeq Scanのため、全10万行を読む必要があります</li>
+                        <li><strong>9行目（複合インデックス作成）：</strong> (created_at, login_count)の複合インデックスを作成します。created_atはより選択性が高い（日付は多くのバリエーション）ため、左に配置するのが最適です</li>
+                        <li><strong>12～16行目（改善後の確認）：</strong> インデックスが作成された後、同じクエリを実行すると、Bitmap Index ScanまたはIndex Scanに切り替わり、実行時間が大幅に短縮されます</li>
+                    </ul>
+                </div>
                 <p>
                     <strong>解説：</strong> 
                     このクエリは両方とも範囲条件なので、created_at が より選択性が高いため（日付は多くのバリエーション）、
@@ -649,6 +733,14 @@ SELECT * FROM players WHERE level > 180 / 2;  -- level > 90
 -- 【修正案2】型が安全な書き方
 EXPLAIN ANALYZE 
 SELECT * FROM players WHERE level > 90;</pre>
+                </div>
+                <div class="code-explanation">
+                    <h5>📍 コード解説</h5>
+                    <ul>
+                        <li><strong>1～3行目（原因説明）：</strong> level列に「*2」という演算を適用しているため、インデックスが「使用不可」になります。PostgreSQLのオプティマイザは「(level * 2)という式のインデックスは存在しない」と判断し、Seq Scanを選びます</li>
+                        <li><strong>6～8行目（修正案1）：</strong> 「level > 180 / 2」に書き換えます。クエリプランナーは「level > 90」（180/2の計算結果）と理解し、idx_players_levelインデックスを使用可能と判断します</li>
+                        <li><strong>11～12行目（修正案2）：</strong> 最も単純で確実な書き方です。人間が計算を済ませて「level > 90」と書くことで、インデックスが確実に使われます</li>
+                    </ul>
                 </div>
                 <p>
                     <strong>解説：</strong> 
@@ -700,6 +792,15 @@ JOIN guilds g ON p.guild_id = g.id
 WHERE p.level >= 50 
 ORDER BY p.guild_id, p.level;</pre>
                 </div>
+                <div class="code-explanation">
+                    <h5>📍 コード解説</h5>
+                    <ul>
+                        <li><strong>2～7行目（現状確認）：</strong> WHERE句で「level >= 50」、ORDER BYで「guild_id, level」でソート結果を指定しています。統計情報から判断して、オプティマイザは「全体の約50%が該当する」と予想し、Hash Joinを選ぶ可能性が高いです</li>
+                        <li><strong>10～11行目（インデックス作成）：</strong> (guild_id, level)の複合インデックスを作成します。このインデックスは「guild_idで整理され、その中でlevelでソート」されているため、ORDER BY句とマッチして、Merge Joinを可能にします</li>
+                        <li><strong>14行目（コメント説明）：</strong> guildsテーブルはサイズが小さい（50行）ため、結合方式の選択への影響は限定的です。重要なのはplayersテーブル側のインデックス設計です</li>
+                        <li><strong>17～22行目（改善後の確認）：</strong> インデックス作成後、同じクエリを実行すると、オプティマイザは「あ、すでにソート済みのインデックスがある」と認識し、新たにソートせずにMerge Joinを選びます</li>
+                    </ul>
+                </div>
                 <p>
                     <strong>解説：</strong> 
                     ORDER BY で guild_id と level でソートされているため、
@@ -743,10 +844,21 @@ ANALYZE players;
 -- 4. 実行計画を再確認（rows 予測値が更新される）
 EXPLAIN SELECT * FROM players WHERE level >= 80;</pre>
                 </div>
+                <div class="code-explanation">
+                    <h5>📍 コード解説</h5>
+                    <ul>
+                        <li><strong>2～10行目（大量挿入）：</strong> 「200000 + i」により、新規プレイヤーID 200001～250000を追加します。注意すべき点は「Lv 71-100に集中」していることです。元のデータは「Lv 1-100が均等」だったため、分布が大きく変わります</li>
+                        <li><strong>13行目（ANALYZE前の確認）：</strong> 統計情報はまだ「旧分布」のままなので、「WHERE level >= 80」の推定行数が過小評価されます。元の均等分布なら「約10,000の20%=2,000行」と予測されますが、実際には新しいデータが大量に追加されています</li>
+                        <li><strong>16行目（ANALYZE実行）：</strong> 統計情報を最新化します。PostgreSQLがテーブルをサンプリングして「新しい分布はレベルが高い方に偏っている」という情報を認識します</li>
+                        <li><strong>19行目（ANALYZE後の確認）：</strong> 「WHERE level >= 80」のrows予測値が大幅に増加します。新たな実行計画では、より正確な見積もりに基づいて結合方式が選ばれるようになります</li>
+                    </ul>
+                </div>
                 <p>
                     <strong>期待される結果：</strong> 
                     ANALYZE 後、rows の予測値が増加します。
                     これにより、オプティマイザはより正確な計画を立てられるようになります。
+                </p>
+            </details>
                 </p>
             </details>
 
