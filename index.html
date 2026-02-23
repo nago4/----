@@ -50,7 +50,7 @@
             <div class="important-box">
                 <h4>⚠️ 前提知識</h4>
                 <p>
-                    本記事は、第01〜12回講義で学んだ以下の内容を理解していることを前提とします：
+                    本記事は、第01〜12回講義で学んだ以下の内容を理解していることを前提とします
                 </p>
                 <ul>
                     <li>基本的なSELECT文（WHERE、JOIN、GROUP BY、ORDER BY）</li>
@@ -75,7 +75,7 @@
             </p>
 
             <div class="step-box">
-                    以下の<strong>必須ファイルをコピー</strong>してください：
+                    以下の<strong>必須ファイルをコピー</strong>してください
                 </p>
                 <ul>
                     <li><code>package.json</code> - NPMパッケージ設定ファイル</li>
@@ -258,11 +258,11 @@ EXPLAIN ANALYZE SELECT * FROM players WHERE level = 50;</pre>
             </div>
 
             <div class="result">
-                <h4>📊 出力例（EXPLAIN）：</h4>
+                <h4>📊 出力例（EXPLAIN）</h4>
                 <pre>Seq Scan on players  (cost=0.00..2041.00 rows=1000 width=45)
   Filter: (level = 50)</pre>
                 
-                <h4>📊 出力例（EXPLAIN ANALYZE）：</h4>
+                <h4>📊 出力例（EXPLAIN ANALYZE）</h4>
                 <pre>Seq Scan on players  (cost=0.00..2041.00 rows=1000 width=45) (actual time=0.023..14.567 rows=990 loops=1)
   Filter: (level = 50)
   Rows Removed by Filter: 99010
@@ -286,7 +286,7 @@ Execution Time: 14.612 ms</pre>
             <p>PostgreSQLのコストは以下のパラメータから算出されます。</p>
             <div class="formula-box">
                 <pre>Seq Scanのコスト = (ページ数 × seq_page_cost) + (行数 × cpu_tuple_cost) + (行数 × cpu_operator_cost)</pre>
-                <p>デフォルト値：</p>
+                <p>デフォルト値</p>
                 <ul>
                     <li><code>seq_page_cost = 1.0</code> (順次ディスク読み込みコスト)</li>
                     <li><code>random_page_cost = 4.0</code> (ランダムディスク読み込みコスト)</li>
@@ -335,9 +335,9 @@ EXPLAIN ANALYZE SELECT * FROM players WHERE level = 50;</pre>
                 </ul>
             </div>
             <div class="result">
-                <h4>📊 実行結果（インデックス作成前）：</h4>
+                <h4>📊 実行結果（インデックス作成前）</h4>
                 <pre>Execution Time: 14.612 ms</pre>
-                <h4>📊 実行結果（インデックス作成後）：</h4>
+                <h4>📊 実行結果（インデックス作成後）</h4>
                 <pre>Execution Time: 0.832 ms</pre>
                 <p><strong>高速化：約17.6倍！</strong></p>
             </div>
@@ -399,7 +399,7 @@ EXPLAIN ANALYZE SELECT * FROM players WHERE level >= 1;</pre>
                     これは<code>random_page_cost (4.0) > seq_page_cost (1.0)</code>だからです。
                 </p>
                 <p>
-                    インデックス経由でデータを取得する流れ：<br>
+                    インデックス経由でデータを取得する流れ<br>
                     1. インデックスを探索<br>
                     2. 該当アドレスを取得<br>
                     3. テーブル本体からランダムアクセス（重い）<br>
